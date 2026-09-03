@@ -13,7 +13,7 @@ RUN service postgresql start && \
     service postgresql stop
 
 # Copier ton jar
-COPY target/achat-1.0.jar achat-1.0.jar
+COPY target/*.jar achat.jar
 
 # Config supervisor pour lancer postgres + spring boot ensemble
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
