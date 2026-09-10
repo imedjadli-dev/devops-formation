@@ -1,7 +1,8 @@
 FROM eclipse-temurin:17-jdk
 
 # Installer PostgreSQL + supervisor pour lancer les deux process
-RUN apt-get update && \
+RUN rm -rf /var/lib/apt/lists/* && \
+    apt-get update && \
     apt-get install -y postgresql postgresql-contrib supervisor && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
