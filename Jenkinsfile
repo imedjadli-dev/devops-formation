@@ -186,18 +186,12 @@ pipeline {
         // ============================================
         stage('Docker Build') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh '''
-                        echo "=== Testing Network Connectivity ==="
-                        curl -sS --max-time 10 https://auth.docker.io/token || echo "WARNING: Cannot reach auth.docker.io"
 
-                        echo "=== Logging into Docker Hub ==="
-                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-
+                    sh ''''
                         echo "=== Building Docker Image ==="
                         docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
                     '''
-                }
+
             }
         }
 
