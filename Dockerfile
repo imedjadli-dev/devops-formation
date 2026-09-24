@@ -1,18 +1,24 @@
-FROM eclipse-temurin:17-jre-jammy
+FROM eclipse-temurin:17-jdk
 
-# Install only supervisor (drop PostgreSQL from this image)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends supervisor && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# Installer PostgreSQL + supervisor pour lancer les deux process
+RUN rm -rf /var/lib/apt/lists/* && \
+    apt-get update && \
+    apt-get install -y postgresql postgresql-contrib supervisor && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy application JAR
+# Initialiser PostgreSQL
+ENV PGDATA=/var/lib/postgresql/18/main
+RUN service postgresql start && \
+    su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'root';\"" && \
+    su postgres -c "psql -c \"CREATE DATABASE devopsdb;\"" && \
+    service postgresql stop
+
+# Copier ton jar
 COPY target/*.jar achat.jar
 
-# Copy supervisor config
+# Config supervisor pour lancer postgres + spring boot ensemble
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 EXPOSE 8282 5432
 
-ENTRYPOINT ["/usr/bin/supervisord"]
-CMD ["-c", "/etc/supervisor/conf.d/supervisord.conf"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
