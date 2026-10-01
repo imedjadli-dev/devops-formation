@@ -72,13 +72,31 @@ pipeline {
 
         // Requires the SonarQube webhook -> http://<jenkins-url>/sonarqube-webhook/
         // Set abortPipeline: false to only report the result without stopping the build
-        stage('Quality Gate') {
-            steps {
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
-            }
-        }
+       stage('Quality Gate') {
+           steps {
+               withSonarQubeEnv('SonarQube') {
+                   sh '''
+                       CE_TASK_URL=$(grep '^ceTaskUrl=' target/sonar/report-task.txt | cut -d= -f2-)
+
+                       echo "Waiting for SonarQube analysis to finish..."
+                       for i in $(seq 1 30); do
+                           TASK=$(curl -sf -u "${SONAR_AUTH_TOKEN}:" "$CE_TASK_URL")
+                           STATUS=$(echo "$TASK" | grep -o '"status":"[A-Z_]*"' | head -1 | cut -d'"' -f4)
+                           echo "Task status: $STATUS ($i/30)"
+                           [ "$STATUS" = "SUCCESS" ] && break
+                           if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELED" ]; then exit 1; fi
+                           sleep 5
+                       done
+                       [ "$STATUS" = "SUCCESS" ] || { echo "Timed out waiting for analysis"; exit 1; }
+
+                       ANALYSIS_ID=$(echo "$TASK" | grep -o '"analysisId":"[^"]*"' | cut -d'"' -f4)
+                       GATE=$(curl -sf -u "${SONAR_AUTH_TOKEN}:" "${SONAR_HOST_URL}/api/qualitygates/project_status?analysisId=$ANALYSIS_ID" | grep -o '"status":"[A-Z]*"' | head -1 | cut -d'"' -f4)
+                       echo "Quality Gate: $GATE"
+                       [ "$GATE" = "OK" ]
+                   '''
+               }
+           }
+       }
 
         // ───────────── Image ─────────────
         stage('Check JAR') {
