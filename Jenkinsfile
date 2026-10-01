@@ -59,16 +59,16 @@ pipeline {
         // ───────────── Quality ─────────────
         // 'sonarqube' must match the server name in Manage Jenkins > System > SonarQube servers
         stage('SonarQube Analysis') {
-                    steps {
-                        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                            sh '''
-                                mvn org.sonarsource.scanner.maven:sonar-maven-plugin:5.7.0.6970:sonar \
-                                    -Dsonar.host.url=http://127.0.0.1:9000 \
-                                    -Dsonar.token=${SONAR_TOKEN}
-                            '''
-                        }
-                    }
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh '''
+                        mvn org.sonarsource.scanner.maven:sonar-maven-plugin:5.7.0.6970:sonar \
+                            -Dsonar.host.url=${SONAR_HOST_URL} \
+                            -Dsonar.token=${SONAR_AUTH_TOKEN}
+                    '''
                 }
+            }
+        }
 
         // Requires the SonarQube webhook -> http://<jenkins-url>/sonarqube-webhook/
         // Set abortPipeline: false to only report the result without stopping the build
