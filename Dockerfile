@@ -1,24 +1,11 @@
-FROM eclipse-temurin:17-jdk
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /app
+COPY pom.xml .
+COPY src ./src
+RUN mvn -q clean package -DskipTests
 
-# Installer PostgreSQL + supervisor pour lancer les deux process
-RUN rm -rf /var/lib/apt/lists/* && \
-    apt-get update && \
-    apt-get install -y postgresql postgresql-contrib supervisor && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Initialiser PostgreSQL
-ENV PGDATA=/var/lib/postgresql/18/main
-RUN service postgresql start && \
-    su postgres -c "psql -c \"ALTER USER postgres PASSWORD 'root';\"" && \
-    su postgres -c "psql -c \"CREATE DATABASE devopsdb;\"" && \
-    service postgresql stop
-
-# Copier ton jar
-COPY target/*.jar achat.jar
-
-# Config supervisor pour lancer postgres + spring boot ensemble
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-
-EXPOSE 8282 5432
-
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+COPY --from=build /app/target/*.jar app.jar
+EXPOSE 8282
+ENTRYPOINT ["java", "-jar", "app.jar"]

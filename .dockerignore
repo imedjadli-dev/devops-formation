@@ -1,7 +1,6 @@
 .git
 .gitignore
 .mvn
-src
 target/*
 !target/*.jar
 README.md
