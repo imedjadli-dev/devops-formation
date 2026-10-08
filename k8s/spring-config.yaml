@@ -4,4 +4,4 @@ metadata:
   name: spring-config
   namespace: devops
 data:
-  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-service:5433/devopsdb
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-service:5432/devopsdb

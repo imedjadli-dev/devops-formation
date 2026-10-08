@@ -5,12 +5,16 @@ pipeline {
         DOCKER_IMAGE = 'imedjedli/achat-app'
         DOCKER_TAG   = "2.${BUILD_NUMBER}"
         TRIVY_CACHE  = '/Users/Shared/trivy-cache'
+
+        // Kubernetes (minikube)
+        K8S_NAMESPACE  = 'devops'
+        K8S_DEPLOYMENT = 'spring-backend'
+        K8S_DIR        = 'k8s'
     }
 
     stages {
-        // ============================================
-        // 1. CHECKOUT
-        // ============================================
+
+        // Checkout
         stage('Checkout') {
             steps {
                 git branch: 'main',
@@ -18,56 +22,21 @@ pipeline {
             }
         }
 
-        // ============================================
-        // 2. BUMP VERSION
-        // ============================================
+        // Bump version
         stage('Bump Version') {
             steps {
-                // FIX: l'ancien code contenait "\\${BUILD_NUMBER}" -> le backslash
-                // était conservé et injectait un caractère "\" littéral dans le
-                // numéro de version (ex: "2.\42" au lieu de "2.42"), ce qui pouvait
-                // faire échouer "versions:set". Utilisation de guillemets simples
-                // pour laisser le shell (pas Groovy) faire l'interpolation.
                 sh 'mvn versions:set -DnewVersion=2.${BUILD_NUMBER} -DgenerateBackupPoms=false'
             }
         }
 
-        // ============================================
-        // 3. ENVIRONMENT
-        // ============================================
-        stage('Environment') {
+        // Maven clean + compile
+        stage('Maven Clean & Compile') {
             steps {
-                sh '''
-                    echo "===== JAVA ====="
-                    java -version
-
-                    echo "===== MAVEN ====="
-                    mvn -version
-                '''
+                sh 'mvn clean compile'
             }
         }
 
-        // ============================================
-        // 4. MAVEN CLEAN
-        // ============================================
-        stage('Maven Clean') {
-            steps {
-                sh 'mvn clean'
-            }
-        }
-
-        // ============================================
-        // 5. MAVEN COMPILE
-        // ============================================
-        stage('Maven Compile') {
-            steps {
-                sh 'mvn compile'
-            }
-        }
-
-        // ============================================
-        // 6. UNIT TESTS
-        // ============================================
+        // Unit tests
         stage('Unit Tests') {
             steps {
                 sh 'mvn test'
@@ -79,21 +48,14 @@ pipeline {
             }
         }
 
-        // ============================================
-        // 7. CODE COVERAGE
-        // ============================================
+        // Code coverage
         stage('Code Coverage') {
             steps {
                 sh 'mvn verify'
             }
         }
 
-        // ============================================
-        // 8. SONARQUBE
-        // ============================================
-        // ============================================
-        // 5. SONARQUBE ANALYSIS
-        // ============================================
+        // SonarQube analysis
         stage('SonarQube Analysis') {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
@@ -106,11 +68,7 @@ pipeline {
             }
         }
 
-
-
-        // ============================================
-        // 9. CHECK PATH
-        // ============================================
+        // Check path
         stage('Check Path') {
             steps {
                 sh '''
@@ -126,32 +84,25 @@ pipeline {
             }
         }
 
-        // ============================================
-        // 10. GENERATE SETTINGS.XML
-        // ============================================
+        // Generate settings.xml
         stage('Generate settings.xml') {
             steps {
-                // FIX: identifiants Nexus en clair ("admin"/"nexusadmin").
-                // Récupérés depuis les credentials Jenkins (ID: nexus-creds)
-                // et injectés dans le settings.xml généré dynamiquement.
                 withCredentials([usernamePassword(credentialsId: 'nexus-creds', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
                     writeFile file: 'settings.xml', text: """<settings>
-  <servers>
-    <server>
-      <id>deploymentRepo</id>
-      <username>${NEXUS_USER}</username>
-      <password>${NEXUS_PASS}</password>
-    </server>
-  </servers>
-</settings>
-"""
+                        <servers>
+                            <server>
+                                <id>deploymentRepo</id>
+                                <username>${NEXUS_USER}</username>
+                                <password>${NEXUS_PASS}</password>
+                            </server>
+                        </servers>
+                    </settings>
+                    """
                 }
             }
         }
 
-        // ============================================
-        // 11. DEPLOY TO NEXUS
-        // ============================================
+        // Deploy to Nexus
         stage('Deploy to Nexus') {
             steps {
                 sh '''
@@ -163,41 +114,28 @@ pipeline {
             }
         }
 
-        // ============================================
-        // 12. MAVEN PACKAGE
-        // ============================================
+        // Maven package
         stage('Maven Package') {
             steps {
                 sh 'mvn package -DskipTests'
             }
         }
 
-        // ============================================
-        // 13. CHECK JAR
-        // ============================================
+        // Check jar
         stage('Check JAR') {
             steps {
                 sh 'ls -la target/*.jar'
             }
         }
 
-        // ============================================
-        // 14. DOCKER BUILD
-        // ============================================
+        // Docker build
         stage('Docker Build') {
             steps {
-
-                    sh ''''
-                        echo "=== Building Docker Image ==="
-                        docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .
-                    '''
-
+                sh 'docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} .'
             }
         }
 
-        // ============================================
-        // 15. TRIVY SECURITY SCAN
-        // ============================================
+        // Trivy security scan
         stage('Trivy Security Scan') {
             steps {
                 sh '''
@@ -213,20 +151,13 @@ pipeline {
             }
         }
 
-        // ============================================
-        // 16. DOCKER PUSH
-        // ============================================
-        // FIX: il y avait DEUX stages nommés "Docker Push" à la suite,
-        // le second refaisant exactement le login + tag + push du premier
-        // (build inutilement plus long, confusion dans Blue Ocean).
-        // Fusionnés en un seul stage avec le test de connectivité inclus.
-     // ============================================
-        // 16. DOCKER PUSH
-        // ============================================
+
+
+        // Docker push
         stage('Docker Push') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    retry(3) {
+                    retry(5) {
                         sh '''
                             echo "=== Logging into Docker Hub ==="
                             echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
@@ -239,62 +170,103 @@ pipeline {
             }
         }
 
-        // ============================================
-                // 17. DEPLOY WITH ANSIBLE
-                // ============================================
-                stage('Deploy with Ansible') {
-                    steps {
-                        withCredentials([usernamePassword(credentialsId: 'nexus-creds', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                            dir('/Users/imedjadli/ansible-workshop') {
-                                sh '''
-                                    export PATH=/opt/homebrew/bin:$PATH
-                                    ansible-playbook site.yml --tags backend -e "backend_version=2.${BUILD_NUMBER}"
-                                '''
-                            }
-                        }
-                    }
-                }
-    }
+        // Docker Compose
+     // Docker Compose
+        stage('Docker Compose') {
+            steps {
+                sh '''
+                    rm -rf prometheus.yml/ 2>/dev/null || true
+                    docker compose down --remove-orphans || true
+                    docker compose up -d --build
+                    docker compose ps
+                '''
+            }
+        }
 
-     stage('Deploy') {
-                environment {
-                    NEXUS_URL = 'http://127.0.0.1:8081'
-                }
-                steps {
-                    withCredentials([usernamePassword(credentialsId: 'nexus-creds', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+        // Deploy with Ansible
+        stage('Deploy with Ansible') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'nexus-creds', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+                    dir('/Users/imedjadli/ansible-workshop') {
                         sh '''
-                            cd /Users/imedjadli/ansible-workshop/backend
-                            /opt/homebrew/bin/ansible-playbook -i inventory.ini site.yml \
-                              -e "app_env=prod" \
-                              -e "build_number=${BUILD_NUMBER}" \
-                              -e "nexus_url=${NEXUS_URL}" \
-                              -e "zip_name=devops-formation-frontend-${BUILD_NUMBER}.zip"
+                            export PATH=/opt/homebrew/bin:$PATH
+                            ansible-playbook site.yml --tags backend -e "backend_version=2.${BUILD_NUMBER}"
                         '''
                     }
                 }
             }
+        }
 
-    // ================================================
-    // PIPELINE POST ACTIONS
-    // ================================================
+        // Deploy to Kubernetes (minikube)
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh '''
+                    export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH
+
+                    echo "===== K8S CONTEXT ====="
+                    kubectl config current-context
+                    kubectl get nodes
+
+                    echo "===== APPLY MANIFESTS ====="
+                    kubectl apply -f ${K8S_DIR}/spring-config.yaml
+                    kubectl apply -f ${K8S_DIR}/spring-service.yaml
+                    sed "s|IMAGE_PLACEHOLDER|${DOCKER_IMAGE}:${DOCKER_TAG}|" ${K8S_DIR}/spring-deployment.yaml | kubectl apply -f -
+
+                    echo "===== ROLLOUT STATUS ====="
+                    kubectl rollout status deployment/${K8S_DEPLOYMENT} -n ${K8S_NAMESPACE} --timeout=180s
+
+                    echo "===== RESOURCES ====="
+                    kubectl get pods,svc -n ${K8S_NAMESPACE}
+                '''
+            }
+        }
+
+        // Prometheus check
+        stage('Prometheus') {
+            steps {
+                sh '''
+                    echo "===== PROMETHEUS HEALTH ====="
+                    curl -sf http://127.0.0.1:9090/-/healthy
+
+                    echo "===== PROMETHEUS READY ====="
+                    curl -sf http://127.0.0.1:9090/-/ready
+
+                    echo "===== TARGETS ====="
+                    curl -sf http://127.0.0.1:9090/api/v1/targets | grep -o '"health":"[a-z]*"'
+                '''
+            }
+        }
+
+        // Grafana check
+        stage('Grafana') {
+            steps {
+                sh '''
+                    echo "===== GRAFANA HEALTH ====="
+                    for i in $(seq 1 20); do
+                        if curl -sf http://127.0.0.1:3000/api/health; then
+                            echo ""
+                            echo "Grafana OK"
+                            exit 0
+                        fi
+                        echo "Grafana pas encore prêt ($i/20)..."
+                        sleep 3
+                    done
+                    echo "Grafana non disponible"
+                    exit 1
+                '''
+            }
+        }
+    }
+
     post {
         success {
-            echo '================================='
             echo 'PIPELINE STATUS : SUCCESS'
-            echo '================================='
         }
-
         failure {
-            echo '================================='
             echo 'PIPELINE STATUS : FAILED'
-            echo '================================='
         }
-
         always {
-            echo '================================='
             echo 'PIPELINE TERMINE'
-            echo '================================='
         }
     }
 }
-
